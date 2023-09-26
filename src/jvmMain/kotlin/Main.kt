@@ -1,4 +1,6 @@
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Switch
@@ -7,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -20,8 +23,10 @@ import androidx.compose.ui.window.singleWindowApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -52,7 +57,7 @@ fun <T> InfiniteGrid(
     }
 
     val idx2Items = remember { mutableStateMapOf<IntOffset, T?>() }
-    val idxLoadStarted = remember { HashMap<IntOffset, Boolean>() }
+    val idxLoadStarted = remember { mutableStateMapOf<IntOffset, Boolean>() }
 
     val contentModifierZoomed = remember {
         derivedStateOf {
@@ -65,29 +70,53 @@ fun <T> InfiniteGrid(
 
 
     val contentBuilder = @Composable {
+        println("composing tiles ${topLeftTileIdx.x}:${topLeftTileIdx.y} -- ${columnCount + topLeftTileIdx.x}:${rowCount + topLeftTileIdx.y} r: $rowCount, c: $columnCount")
         for (i in 0 until rowCount) {
             for (j in 0 until columnCount) {
                 val x = j + topLeftTileIdx.x
                 val y = i + topLeftTileIdx.y
                 val offs = IntOffset(x, y)
-                val data =
-                    if (idxLoadStarted.contains(offs)) {
-                        idx2Items[offs]
-                    } else {
-                        idxLoadStarted[offs] =
-                            true // assuming that composable functions run in synchronous manner, so no race is possible (am I right?)
-                        loadContext.launch {
+
+                println("$x:$y before")
+                LaunchedEffect(offs) {
+                    println("$x:$y eff")
+                    if (!idxLoadStarted.contains(offs)) {
+                        idx2Items[offs] = null
+//                        loadContext.launch {
+//                            idxLoadStarted[offs] = true
+////                            println("$x:$y load started")
+//                            idx2Items[offs] = load(x, y)
+//                            println("$x:$y loaded")
+//                        }
+                        withContext(loadContext.coroutineContext) {
+                            idxLoadStarted[offs] = true
+                            println("$x:$y load started")
                             idx2Items[offs] = load(x, y)
                         }
-                        null
                     }
+                }
+
+//                val uiScope = rememberCoroutineScope()
+//
+//                if (idxLoadStarted.contains(offs)) {
+//                    idx2Items[offs]
+//                } else {
+//                    idxLoadStarted[offs] =
+//                        true // assuming that composable functions run in synchronous manner, so no race is possible (am I right?)
+//                    loadContext.launch {
+//                        val res = load(x, y)
+//                        withContext(uiScope.coroutineContext) {
+//                            idx2Items[offs] = res
+//                        }
+//                    }
+//                }
+
                 Box(modifier = contentModifierZoomed.value) {
-                    show(data, x, y, contentModifierZoomed.value)
+                    show(idx2Items[offs], x, y, contentModifierZoomed.value)
                 }
             }
         }
     }
-
 
     var mousePosition by remember { mutableStateOf(IntOffset(0, 0)) }
     var mousePress by remember { mutableStateOf<IntOffset?>(null) }
@@ -172,7 +201,8 @@ fun main() = singleWindowApplication {
             IntOffset(300, 300), CoroutineScope(Dispatchers.IO),
             load = { i, j ->
                 try {
-                    loadImageBitmap("https://picsum.photos/200/200")
+//                    loadImageBitmap("https://picsum.photos/200/200")
+                    loadImageBitmap("https://random.imagecdn.app/200/200")
                 } catch (ex: Exception) {
                     ex.printStackTrace()
                     null
@@ -180,12 +210,13 @@ fun main() = singleWindowApplication {
             },
             show = @Composable { el, x, y, modifier ->
                 if (el == null) {
-                    Image(
-                        painter = defaultPainter,
-                        contentDescription = "image stub",
-                        contentScale = ContentScale.Fit,
-                        modifier = modifier.fillMaxSize()
-                    )
+//                    Image(
+//                        painter = defaultPainter,
+//                        contentDescription = "image stub",
+//                        contentScale = ContentScale.Fit,
+//                        modifier = modifier.fillMaxSize()
+//                    )
+                    Box(modifier.background(Color.Red)) {}
                 } else {
                     Image(
                         painter = BitmapPainter(el),
@@ -198,6 +229,20 @@ fun main() = singleWindowApplication {
                     Text("[$x, $y]")
                 }
             }
+//            load = { i, j ->
+//                "\nImg $i:$j"
+//            },
+//            show = @Composable { el, x, y, modifier ->
+//                if (el == null) {
+//                    Box(modifier.background(Color.Red)) {}
+//                    Text("\nNONE")
+//                } else {
+//                    Text(el)
+//                }
+//                if (showDebugInfo) {
+//                    Text("[$x, $y]")
+//                }
+//            }
         )
     }
 }
