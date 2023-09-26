@@ -13,6 +13,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.*
 import androidx.compose.ui.res.loadImageBitmap
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.singleWindowApplication
@@ -131,7 +132,7 @@ fun <T> InfiniteGrid(
             ) { }  //skip that layout due to change in observed column/row counts
         } else {
             val placeables = measurables.map { measurable ->
-                measurable.measure(constraints)
+                measurable.measure(Constraints())
             }
 
             val startPos =
@@ -182,15 +183,15 @@ fun main() = singleWindowApplication {
                     Image(
                         painter = defaultPainter,
                         contentDescription = "image stub",
-                        contentScale = ContentScale.Fit,    // unexpectedly that doesn't work if desired image w/h is greater than grid's w/h,
-                        modifier = Modifier.fillMaxSize()   // so blank spacers appear between images and I have no idea how to fix that using library (not by hand-cropping images)
-                    )                                       // maybe there is a way to inherit parent modifier?
+                        contentScale = ContentScale.Fit,
+                        modifier = modifier.fillMaxSize()
+                    )
                 } else {
                     Image(
                         painter = BitmapPainter(el),
                         contentDescription = "random image!",
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = modifier.fillMaxSize()
                     )
                 }
                 if (showDebugInfo) {
