@@ -14,6 +14,8 @@ import kotlinx.coroutines.*
 import java.io.File
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
+import kotlin.random.Random
 
 
 fun loadImageBitmap(file: File): ImageBitmap =
@@ -23,17 +25,17 @@ fun loadImageBitmap(url: String): ImageBitmap {
     return URI(url).toURL().openStream().buffered().use(::loadImageBitmap)
 }
 
-suspend fun loadRandomImage(dimensions: IntOffset): ImageBitmap {
+suspend fun loadImage(id: Int, dimensions: IntOffset): ImageBitmap {
     return withContext(Dispatchers.IO) {
-        loadImageBitmap("https://picsum.photos/${dimensions.x}/${dimensions.y}")
+        loadImageBitmap("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}")
 //        loadImageBitmap("https://random.imagecdn.app/${dimensions.x}/${dimensions.y}")
     }
 }
 
 sealed class LoadState {
-    object Loading : LoadState()
     object Cancelled : LoadState()
-    object Loaded : LoadState()
+    data class Loading(val id: Int) : LoadState()
+    data class Loaded(val id: Int) : LoadState()
 }
 
 @Composable
@@ -42,55 +44,62 @@ fun InfiniteGallery(
     showDebugInfo: Boolean,
 ) {
     val defaultPainter = remember { BitmapPainter(loadImageBitmap(File("sample.png"))) }
-    val idx2Items = remember { mutableStateMapOf<IntOffset, ImageBitmap?>() }
-    val idxLoadState = remember { ConcurrentHashMap<IntOffset, LoadState>() }
+    val id2Items = remember { mutableStateMapOf<Int, ImageBitmap?>() }
+    val offsLoadState = remember { ConcurrentHashMap<IntOffset, LoadState>() } // TODO offs->id + idLoadState
 
     val ioScope = CoroutineScope(Dispatchers.IO)
 
     InfiniteGrid(
         dimensions,
         show = @Composable { offs, modifier ->
-            var shouldStartLoading = false
-            val loadState = idxLoadState.compute(offs) { _, state ->
+            var id = -1
+            var needLoad = false
+            val loadState = offsLoadState.compute(offs) { _, state ->
                 when (state) {
-                    LoadState.Loading -> {
+                    is LoadState.Loading -> {
+                        id = state.id
                         state
                     }
-                    LoadState.Loaded -> {
+                    is LoadState.Loaded -> {
+                        id = state.id
                         state
                     }
                     else -> {
-                        shouldStartLoading = true
-                        LoadState.Loading
+                        id = abs(Random.nextInt()) % 1085 // pixsum has only 1084 images
+                        if (!id2Items.containsKey(id)) {
+                            needLoad = true
+                            LoadState.Loading(id)
+                        } else {
+                            LoadState.Loaded(id)
+                        }
+
                     }
                 }
             }
-            if (shouldStartLoading) {
+            if (needLoad) {
                 ioScope.launch {
                     try {
-                        val res = loadRandomImage(dimensions)
-                        idx2Items[offs] = res
-                        idxLoadState[offs] = LoadState.Loaded
+                        val res = loadImage(id, dimensions)
+                        id2Items[id] = res
+                        offsLoadState[offs] = LoadState.Loaded(id)
                     } catch (ex: Exception) {
-                        ex.printStackTrace()
-                        idxLoadState[offs] = LoadState.Cancelled
+//                        ex.printStackTrace()
+                        offsLoadState[offs] = LoadState.Cancelled   // we do not provide `id` for that case => id would be picked at random (there are some id's missing on picture provider side)
                     }
                 }
 
-//                LaunchedEffect(offs) {
+//                LaunchedEffect(offs) {    // TODO? that approach doesnt work for me because of recompositions. effects are spontaneously cancelled
 //                    try {
-//                        val res = withContext(Dispatchers.IO) {
-//                            loadRandomImage(dimensions)
-//                        }
-//                        idx2Items[offs] = res
-//                        idxLoadState[offs] = LoadState.Loaded
+//                        val res = loadImage(id, dimensions)
+//                        id2Items[id] = res
+//                        offsLoadState[offs] = LoadState.Loaded(id)
 //                    } catch (ex: Exception) {
-//                        println("ex for $offs: ${ex.message}")
-//                        idxLoadState[offs] = LoadState.Cancelled
+////                        ex.printStackTrace()
+//                        offsLoadState[offs] = LoadState.Cancelled
 //                    }
 //                }
             }
-            val el = idx2Items[offs]
+            val el = id2Items[id]
             if (el == null) {
 //                    Image(
 //                        painter = defaultPainter,
@@ -98,7 +107,7 @@ fun InfiniteGallery(
 //                        contentScale = ContentScale.Fit,
 //                        modifier = modifier.fillMaxSize()
 //                    )
-                if (loadState == LoadState.Loading) {
+                if (loadState is LoadState.Loading) {
                     Box(modifier.background(Color.Blue)) {}
                 } else {
                     Box(modifier.background(Color.Red)) {}
@@ -115,19 +124,5 @@ fun InfiniteGallery(
                 Text("${offs.x}, ${offs.y}")
             }
         }
-//            load = { i, j ->
-//                "\nImg $i:$j"
-//            },
-//            show = @Composable { el, x, y, modifier ->
-//                if (el == null) {
-//                    Box(modifier.background(Color.Red)) {}
-//                    Text("\nNONE")
-//                } else {
-//                    Text(el)
-//                }
-//                if (showDebugInfo) {
-//                    Text("[$x, $y]")
-//                }
-//            }
     )
 }
