@@ -12,8 +12,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -26,11 +24,9 @@ fun offs2Idx(offs: IntOffset, width: Int, height: Int): IntOffset {
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun <T> InfiniteGrid(
+fun InfiniteGrid(
     dimensions: IntOffset,
-    loadContext: CoroutineScope,
-    load: suspend (Int, Int) -> T,
-    show: @Composable (T?, Int, Int, Modifier) -> Unit
+    show: @Composable (IntOffset, Modifier) -> Unit
 ) {
     var rowCount by remember { mutableStateOf(2) }
     var columnCount by remember { mutableStateOf(2) }
@@ -42,9 +38,6 @@ fun <T> InfiniteGrid(
     val topLeftTileIdx by remember {
         derivedStateOf { offs2Idx(topLeftPos, contentWidth, contentHeight) }
     }
-
-    val idx2Items = remember { mutableStateMapOf<IntOffset, T?>() }
-    val idxLoadStarted = remember { mutableStateMapOf<IntOffset, Boolean>() }
 
     val contentModifierZoomed = remember {
         derivedStateOf {
@@ -63,18 +56,8 @@ fun <T> InfiniteGrid(
                 val y = i + topLeftTileIdx.y
                 val offs = IntOffset(x, y)
 
-                LaunchedEffect(offs) {
-                    if (!idxLoadStarted.contains(offs)) {
-                        idx2Items[offs] = null
-                        withContext(loadContext.coroutineContext) {
-                            idxLoadStarted[offs] = true
-                            idx2Items[offs] = load(x, y)
-                        }
-                    }
-                }
-
                 Box(modifier = contentModifierZoomed.value) {
-                    show(idx2Items[offs], x, y, contentModifierZoomed.value)
+                    show(offs, contentModifierZoomed.value)
                 }
             }
         }
