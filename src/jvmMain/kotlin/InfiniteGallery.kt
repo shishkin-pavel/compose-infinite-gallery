@@ -38,6 +38,15 @@ sealed class LoadState {
     data class Loaded(val id: Int) : LoadState()
 }
 
+sealed class LoadStateA<T> {
+    class Cancelled<T> : LoadStateA<T>()
+    class Loading<T> : LoadStateA<T>()
+    data class Loaded<T>(val data: T) : LoadStateA<T>()
+}
+
+typealias Id = Int
+typealias Area = Int
+
 @Composable
 fun InfiniteGallery(
     dimensions: IntOffset,
@@ -46,6 +55,8 @@ fun InfiniteGallery(
     val defaultPainter = remember { BitmapPainter(loadImageBitmap(File("sample.png"))) }
     val id2Items = remember { mutableStateMapOf<Int, ImageBitmap?>() }
     val offsLoadState = remember { ConcurrentHashMap<IntOffset, LoadState>() } // TODO offs->id + idLoadState
+    val offs2id = remember { ConcurrentHashMap<IntOffset, Id>() }
+    val idLoadStates = remember { mutableStateMapOf<Id, List<Pair<Area, LoadStateA<ImageBitmap>>>>() }
 
     val ioScope = CoroutineScope(Dispatchers.IO)
 
@@ -77,18 +88,19 @@ fun InfiniteGallery(
                 }
             }
             if (needLoad) {
-                ioScope.launch {
+                ioScope.launch {    // TODO tie ioScope lifetime to gallery lifetime
                     try {
                         val res = loadImage(id, dimensions)
                         id2Items[id] = res
                         offsLoadState[offs] = LoadState.Loaded(id)
                     } catch (ex: Exception) {
 //                        ex.printStackTrace()
-                        offsLoadState[offs] = LoadState.Cancelled   // we do not provide `id` for that case => id would be picked at random (there are some id's missing on picture provider side)
+                        offsLoadState[offs] = LoadState.Cancelled   // we do not provide `id` for that case => `id` would be picked at random (there are some ids may be missing on picture provider side)
                     }
                 }
 
-//                LaunchedEffect(offs) {    // TODO? that approach doesnt work for me because of recompositions. effects are spontaneously cancelled
+                // TODO? that approach doesnt work for me because of recompositions. effects are spontaneously cancelled
+//                LaunchedEffect(offs) {
 //                    try {
 //                        val res = loadImage(id, dimensions)
 //                        id2Items[id] = res

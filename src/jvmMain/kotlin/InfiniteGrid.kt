@@ -56,9 +56,11 @@ fun InfiniteGrid(
                 val y = i + topLeftTileIdx.y
                 val offs = IntOffset(x, y)
 
-                Box(modifier = contentModifierZoomed.value) {
-                    show(offs, contentModifierZoomed.value)
-                }
+//                key(offs) {   // tried to use it with LaunchedEffect in show function, but frequent recompositions still happening
+                    Box(modifier = contentModifierZoomed.value) {
+                        show(offs, contentModifierZoomed.value)
+                    }
+//                }
             }
         }
     }
