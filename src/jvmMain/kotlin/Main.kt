@@ -14,6 +14,6 @@ fun main() = singleWindowApplication {
             Text("show debug info:")
             Switch(checked = showDebugInfo, onCheckedChange = { newValue -> showDebugInfo = newValue })
         }
-        InfiniteGallery(IntOffset(300, 300), showDebugInfo)
+        InfiniteGallery(IntOffset(300, 300), listOf(0.01F, 0.1F, 0.5F, 1F, 2F, 4F, 8F), showDebugInfo)
     }
 }

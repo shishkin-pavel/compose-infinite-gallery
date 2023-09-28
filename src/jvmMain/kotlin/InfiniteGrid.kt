@@ -26,7 +26,7 @@ fun offs2Idx(offs: IntOffset, width: Int, height: Int): IntOffset {
 @Composable
 fun InfiniteGrid(
     dimensions: IntOffset,
-    show: @Composable (IntOffset, Modifier) -> Unit
+    show: @Composable (IntOffset, IntOffset, Modifier) -> Unit
 ) {
     var rowCount by remember { mutableStateOf(2) }
     var columnCount by remember { mutableStateOf(2) }
@@ -49,7 +49,6 @@ fun InfiniteGrid(
     }
 
     val contentBuilder = @Composable {
-        println("composing tiles ${topLeftTileIdx.x}:${topLeftTileIdx.y} -- ${columnCount + topLeftTileIdx.x}:${rowCount + topLeftTileIdx.y} r: $rowCount, c: $columnCount")
         for (i in 0 until rowCount) {
             for (j in 0 until columnCount) {
                 val x = j + topLeftTileIdx.x
@@ -57,9 +56,9 @@ fun InfiniteGrid(
                 val offs = IntOffset(x, y)
 
 //                key(offs) {   // tried to use it with LaunchedEffect in show function, but frequent recompositions still happening
-                    Box(modifier = contentModifierZoomed.value) {
-                        show(offs, contentModifierZoomed.value)
-                    }
+                Box(modifier = contentModifierZoomed.value) {
+                    show(offs, IntOffset(contentWidth, contentHeight), contentModifierZoomed.value)
+                }
 //                }
             }
         }

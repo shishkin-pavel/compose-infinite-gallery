@@ -16,6 +16,8 @@ import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.random.Random
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.persistentMapOf
 
 
 fun loadImageBitmap(file: File): ImageBitmap =
@@ -32,106 +34,121 @@ suspend fun loadImage(id: Int, dimensions: IntOffset): ImageBitmap {
     }
 }
 
-sealed class LoadState {
-    object Cancelled : LoadState()
-    data class Loading(val id: Int) : LoadState()
-    data class Loaded(val id: Int) : LoadState()
-}
-
-sealed class LoadStateA<T> {
-    class Cancelled<T> : LoadStateA<T>()
-    class Loading<T> : LoadStateA<T>()
-    data class Loaded<T>(val data: T) : LoadStateA<T>()
+sealed class LoadState<T> {
+    class Loading<T> : LoadState<T>()
+    data class Loaded<T>(val data: T) : LoadState<T>()
 }
 
 typealias Id = Int
-typealias Area = Int
+typealias Width = Int
 
+fun Collection<Int>.closest(key: Int): Int? {
+    return minByOrNull { abs(it - key) }
+}
+
+fun Collection<Int>.closestBigger(key: Int): Int? {
+    return map { Pair(it, it - key) }.filter { (k, d) -> d >= 0 }.minByOrNull { (k, d) -> d }?.first
+}
+
+@OptIn(InternalComposeApi::class)
 @Composable
 fun InfiniteGallery(
-    dimensions: IntOffset,
+    gridDimensions: IntOffset,
+    imageLoadSizesMultiplier: Collection<Float>,
     showDebugInfo: Boolean,
 ) {
-    val defaultPainter = remember { BitmapPainter(loadImageBitmap(File("sample.png"))) }
-    val id2Items = remember { mutableStateMapOf<Int, ImageBitmap?>() }
-    val offsLoadState = remember { ConcurrentHashMap<IntOffset, LoadState>() } // TODO offs->id + idLoadState
+    val loadSizes = remember {
+        imageLoadSizesMultiplier.associate {
+            Pair(
+                (gridDimensions.x * it).toInt(),
+                (gridDimensions.y * it).toInt()
+            )
+        }
+    }
     val offs2id = remember { ConcurrentHashMap<IntOffset, Id>() }
-    val idLoadStates = remember { mutableStateMapOf<Id, List<Pair<Area, LoadStateA<ImageBitmap>>>>() }
-
-    val ioScope = CoroutineScope(Dispatchers.IO)
+    val idLoadStates = remember { mutableStateMapOf<Id, PersistentMap<Width, LoadState<ImageBitmap>>>() }
 
     InfiniteGrid(
-        dimensions,
-        show = @Composable { offs, modifier ->
-            var id = -1
-            var needLoad = false
-            val loadState = offsLoadState.compute(offs) { _, state ->
-                when (state) {
-                    is LoadState.Loading -> {
-                        id = state.id
-                        state
-                    }
-                    is LoadState.Loaded -> {
-                        id = state.id
-                        state
-                    }
-                    else -> {
-                        id = abs(Random.nextInt()) % 1085 // pixsum has only 1084 images
-                        if (!id2Items.containsKey(id)) {
-                            needLoad = true
-                            LoadState.Loading(id)
-                        } else {
-                            LoadState.Loaded(id)
-                        }
+        gridDimensions,
+        show = @Composable { offs, dimensions, modifier ->
+            val id = offs2id.compute(offs) { _, prevId ->
+                prevId ?: (abs(Random.nextInt()) % 1085) // pixsum has only 1084 images
+            }!!
 
+            val desiredDimensions = run {
+                val w = loadSizes.keys.closestBigger(dimensions.x) ?: loadSizes.keys.closest(dimensions.x)
+                if (w == null) {
+                    IntOffset(gridDimensions.x, gridDimensions.y)
+                } else {
+                    IntOffset(w, loadSizes[w]!!)
+                }
+            }
+
+            var loadNeeded = false
+            idLoadStates.compute(id) { _, stateMap ->
+                if (stateMap == null) {
+                    loadNeeded = true
+                    persistentMapOf(desiredDimensions.x to LoadState.Loading())
+                } else {
+                    if (stateMap.containsKey(desiredDimensions.x)) {
+                        stateMap
+                    } else {
+                        loadNeeded = true
+                        stateMap.put(desiredDimensions.x, LoadState.Loading())
                     }
                 }
             }
-            if (needLoad) {
-                ioScope.launch {    // TODO tie ioScope lifetime to gallery lifetime
+
+            if (loadNeeded) {
+                // the same hack as in `LaunchedEffect`, but without `remember`
+                // cant just use CoroutineScope(Dispatchers.IO) because in that case there is high possibility of getting
+                // Exception in thread "AWT-EventQueue-0" java.lang.IllegalStateException: Unsupported concurrent change during composition. A state object was modified by composition as well as being modified outside composition.
+                // it is because I need to modify `idLoadStates` from both composition thread and from loading coroutine
+                CoroutineScope(currentComposer.applyCoroutineContext).launch {
                     try {
-                        val res = loadImage(id, dimensions)
-                        id2Items[id] = res
-                        offsLoadState[offs] = LoadState.Loaded(id)
+                        val res = loadImage(id, desiredDimensions)
+                        val stateMap = idLoadStates[id]!!
+                        idLoadStates[id] = stateMap.put(desiredDimensions.x, LoadState.Loaded(res))
                     } catch (ex: Exception) {
-//                        ex.printStackTrace()
-                        offsLoadState[offs] = LoadState.Cancelled   // we do not provide `id` for that case => `id` would be picked at random (there are some ids may be missing on picture provider side)
+                        val stateMap = idLoadStates[id]!!
+                        idLoadStates[id] = stateMap.remove(desiredDimensions.x)
+                        offs2id.remove(offs)
                     }
                 }
 
-                // TODO? that approach doesnt work for me because of recompositions. effects are spontaneously cancelled
-//                LaunchedEffect(offs) {
+                // that approach doesn't work for me because of recompositions & remember inside `LaunchedEffect`
+                // effects are spontaneously cancelled (even if I try to specify `key()` around `Box` in `InfiniteGrid`)
+
+//                LaunchedEffect(Unit) {
 //                    try {
-//                        val res = loadImage(id, dimensions)
-//                        id2Items[id] = res
-//                        offsLoadState[offs] = LoadState.Loaded(id)
+//                        val res = loadImage(id, desiredDimensions)
+//                        val stateMap = idLoadStates[id]!!
+//                        idLoadStates[id] = stateMap.put(desiredDimensions.x, LoadState.Loaded(res))
 //                    } catch (ex: Exception) {
-////                        ex.printStackTrace()
-//                        offsLoadState[offs] = LoadState.Cancelled
+//                        val stateMap = idLoadStates[id]!!
+//                        idLoadStates[id] = stateMap.remove(desiredDimensions.x)
+//                        offs2id.remove(offs)
 //                    }
 //                }
             }
-            val el = id2Items[id]
-            if (el == null) {
-//                    Image(
-//                        painter = defaultPainter,
-//                        contentDescription = "image stub",
-//                        contentScale = ContentScale.Fit,
-//                        modifier = modifier.fillMaxSize()
-//                    )
-                if (loadState is LoadState.Loading) {
-                    Box(modifier.background(Color.Blue)) {}
-                } else {
-                    Box(modifier.background(Color.Red)) {}
-                }
-            } else {
+
+            val stateMap = idLoadStates[id]!!
+            val alreadyLoaded =
+                stateMap.filter { it.value is LoadState.Loaded } // getting all loaded images for current id
+            val closestWidth =
+                alreadyLoaded.keys.closestBigger(desiredDimensions.x) ?: alreadyLoaded.keys.closest(desiredDimensions.x)
+            if (closestWidth != null) {
+                val el = alreadyLoaded[closestWidth] as LoadState.Loaded
                 Image(
-                    painter = BitmapPainter(el),
+                    painter = BitmapPainter(el.data),
                     contentDescription = "random image!",
                     contentScale = ContentScale.Fit,
                     modifier = modifier.fillMaxSize()
                 )
+            } else {
+                Box(modifier.background(Color.Red)) {}
             }
+
             if (showDebugInfo) {
                 Text("${offs.x}, ${offs.y}")
             }
