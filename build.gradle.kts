@@ -20,6 +20,7 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.5")
                 implementation("io.ktor:ktor-client-core:$ktor_version")
                 implementation("io.ktor:ktor-client-cio:$ktor_version")
+                implementation("org.slf4j:slf4j-nop:1.7.32")
             }
         }
     }

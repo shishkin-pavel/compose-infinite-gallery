@@ -9,9 +9,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.unit.IntOffset
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.network.sockets.*
+import io.ktor.util.*
+import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.*
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
@@ -19,6 +26,9 @@ import kotlin.math.abs
 import kotlin.random.Random
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentMapOf
+import java.net.Proxy
+import java.net.SocketAddress
+import kotlin.system.exitProcess
 
 fun loadImage(url: String): ImageBitmap { // todo to suspend
     return URI(url).toURL().openStream().buffered().use(::loadImageBitmap)
@@ -28,9 +38,23 @@ fun loadImage(id: Int, dimensions: IntOffset): ImageBitmap {
     return loadImage("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}")
 }
 
+val client = HttpClient() {
+    engine {
+        proxy = Proxy(Proxy.Type.SOCKS, java.net.InetSocketAddress("192.168.8.1", 1081))
+    }
+}
+
 suspend fun loadImageSuspend(id: Int, dimensions: IntOffset): ImageBitmap {
     return withContext(Dispatchers.IO) {
-        loadImage(id, dimensions)
+//        loadImage(id, dimensions)
+        val response = client.get("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}")
+        println(response.status)
+        val b = response.readBytes()
+//        println(String(b, Charsets.UTF_8))
+//        exitProcess(77)
+        org.jetbrains.skia.Image.makeFromEncoded(b).toComposeImageBitmap()
+//        client.get("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}").bodyAsChannel().toInputStream()
+//            .use(::loadImageBitmap)
     }
 }
 
@@ -106,6 +130,7 @@ fun ShowImage(
                 val stateMap = idLoadStates[id]!!
                 idLoadStates[id] = stateMap.put(desiredDimensions.x, LoadState.Loaded(res))
             } catch (ex: Exception) {
+                println("ex: $ex")
                 val stateMap = idLoadStates[id]!!
                 idLoadStates[id] = stateMap.remove(desiredDimensions.x)
                 offs2id.remove(offs)    // if there is a trouble with loading an image with specific id, we would just try to load next random one
