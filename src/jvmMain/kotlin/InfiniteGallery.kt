@@ -11,50 +11,59 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.unit.IntOffset
 import io.ktor.client.*
+import io.ktor.client.engine.*
+import io.ktor.client.engine.okhttp.*
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import io.ktor.network.sockets.*
-import io.ktor.util.*
-import io.ktor.utils.io.jvm.javaio.*
+import io.ktor.http.*
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.*
-import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.random.Random
-import kotlinx.collections.immutable.PersistentMap
-import kotlinx.collections.immutable.persistentMapOf
-import java.net.Proxy
-import java.net.SocketAddress
-import kotlin.system.exitProcess
+import java.net.URI
+import androidx.compose.ui.res.loadImageBitmap
+import okhttp3.ConnectionPool
+import java.util.concurrent.TimeUnit
 
-fun loadImage(url: String): ImageBitmap { // todo to suspend
-    return URI(url).toURL().openStream().buffered().use(::loadImageBitmap)
-}
+// blocking image loading wrapped in suspend
+//fun loadImage(url: String): ImageBitmap {
+//    return URI(url).toURL().openStream().buffered().use(::loadImageBitmap)
+//}
+//
+//fun loadImage(id: Int, dimensions: IntOffset): ImageBitmap {
+//    return loadImage("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}")
+//}
+//
+//suspend fun loadImageSuspend(id: Int, dimensions: IntOffset): ImageBitmap {
+//    return withContext(Dispatchers.IO) {
+//        loadImage(id, dimensions)
+//    }
+//}
 
-fun loadImage(id: Int, dimensions: IntOffset): ImageBitmap {
-    return loadImage("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}")
-}
-
-val client = HttpClient() {
+// OkHttp is used because of socks proxy support (which is needed on my machine to bypass cloudflare protection)
+val client = HttpClient(OkHttp) {
     engine {
-        proxy = Proxy(Proxy.Type.SOCKS, java.net.InetSocketAddress("192.168.8.1", 1081))
+        config {
+            followRedirects(true)
+            connectionPool(ConnectionPool(1000, 1, TimeUnit.MINUTES))
+        }
+//        proxy = ProxyBuilder.socks("192.168.8.1", 1081)
     }
 }
 
+
 suspend fun loadImageSuspend(id: Int, dimensions: IntOffset): ImageBitmap {
     return withContext(Dispatchers.IO) {
-//        loadImage(id, dimensions)
-//        val response = client.get("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}")
-        val response = client.get("https://ipinfo.io/json")
-        val b = response.readBytes()
-        println(String(b, Charsets.UTF_8))
-        exitProcess(77)
-        org.jetbrains.skia.Image.makeFromEncoded(b).toComposeImageBitmap()
-//        client.get("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}").bodyAsChannel().toInputStream()
-//            .use(::loadImageBitmap)
+        val response = client.get("https://picsum.photos/id/$id/${dimensions.x}/${dimensions.y}")
+        if (!response.status.isSuccess()) {
+            throw ResponseException(response, "")
+        }
+        org.jetbrains.skia.Image.makeFromEncoded(response.readBytes()).toComposeImageBitmap()
     }
 }
 
@@ -130,7 +139,7 @@ fun ShowImage(
                 val stateMap = idLoadStates[id]!!
                 idLoadStates[id] = stateMap.put(desiredDimensions.x, LoadState.Loaded(res))
             } catch (ex: Exception) {
-                println("ex: $ex")
+//                println("ex: $ex")
                 val stateMap = idLoadStates[id]!!
                 idLoadStates[id] = stateMap.remove(desiredDimensions.x)
                 offs2id.remove(offs)    // if there is a trouble with loading an image with specific id, we would just try to load next random one
