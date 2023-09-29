@@ -28,6 +28,7 @@ import kotlin.random.Random
 import java.net.URI
 import androidx.compose.ui.res.loadImageBitmap
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import java.util.concurrent.TimeUnit
 
 // blocking image loading wrapped in suspend
@@ -50,7 +51,10 @@ val client = HttpClient(OkHttp) {
     engine {
         config {
             followRedirects(true)
-            connectionPool(ConnectionPool(1000, 1, TimeUnit.MINUTES))
+            val d = Dispatcher()
+            d.maxRequests = 100
+            d.maxRequestsPerHost = 100
+            dispatcher(dispatcher = d)
         }
 //        proxy = ProxyBuilder.socks("192.168.8.1", 1081)
     }
