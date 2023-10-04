@@ -93,33 +93,31 @@ fun InfiniteGrid(
         modifier = layoutMouseEventsModifier.clipToBounds(),
         content = contentBuilder
     ) { measurables, constraints ->
-
+        var currColumnCount = columnCount
+        var currRowCount = rowCount
 
         columnCount = ceil(constraints.maxWidth.toDouble() / contentWidth).toInt() + 1
         rowCount = ceil(constraints.maxHeight.toDouble() / contentHeight).toInt() + 1
 
-        if (measurables.count() != columnCount * rowCount) {
-            layout(
-                constraints.maxWidth,
-                constraints.maxHeight
-            ) { }  //skip that layout due to change in observed column/row counts
-        } else {
-            val placeables = measurables.map { measurable ->
-                measurable.measure(Constraints())
-            }
+        if (measurables.count() == columnCount * rowCount) {
+            currColumnCount = columnCount
+            currRowCount = rowCount
+        }
 
-            val startPos =
-                IntOffset(topLeftTileIdx.x * contentWidth, topLeftTileIdx.y * contentHeight).minus(topLeftPos)
+        val placeables = measurables.map { measurable ->
+            measurable.measure(Constraints())
+        }
 
-            layout(constraints.maxWidth, constraints.maxHeight) {
-                placeables.chunked(columnCount).chunked(rowCount).map { rows ->
-                    rows.fold(startPos) { yoffs, row ->
-                        row.fold(yoffs) { xoffs, item ->
-                            item.placeRelative(xoffs)
-                            xoffs.plus(IntOffset(contentWidth, 0))
-                        }
-                        yoffs.plus(IntOffset(0, contentHeight))
+        val startPos = IntOffset(topLeftTileIdx.x * contentWidth, topLeftTileIdx.y * contentHeight).minus(topLeftPos)
+
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            placeables.chunked(currColumnCount).chunked(currRowCount).map { rows ->
+                rows.fold(startPos) { yoffs, row ->
+                    row.fold(yoffs) { xoffs, item ->
+                        item.placeRelative(xoffs)
+                        xoffs.plus(IntOffset(contentWidth, 0))
                     }
+                    yoffs.plus(IntOffset(0, contentHeight))
                 }
             }
         }
