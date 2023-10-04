@@ -32,7 +32,7 @@ kotlin {
     sourceSets {
         val jvmMain by getting {
             dependencies {
-                implementation(compose.desktop.windows_x64)
+                implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.5")
                 implementation("io.ktor:ktor-client-core:$ktorVersion")
 //                implementation("io.ktor:ktor-client-cio:$ktor_version")
